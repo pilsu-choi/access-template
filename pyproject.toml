@@ -1,0 +1,47 @@
+[project]
+name = "sso-template"
+version = "0.1.0"
+description = "OIDC / SAML 2.0 SSO integration starter (FastAPI)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=50.0.2",
+    "fastapi>=0.159.1",
+    "httpx>=0.28.1",
+    "joserfc>=1.7.7",
+    "pydantic-settings>=2.16.1",
+    "python-dotenv>=1.2.4",
+    "python-multipart>=0.0.32",
+    "python3-saml>=1.16.0",
+    "pyyaml>=6.0.3",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.10,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-playwright>=0.10.0",
+    "ruff>=0.17.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-m 'not e2e'"
+markers = ["e2e: real browser against local Keycloak (docker compose up)"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106"]

@@ -1,0 +1,267 @@
+"""FastAPI wiring: auth routes, session cookies and app-facing dependencies."""
+
+from __future__ import annotations
+
+import html
+import logging
+import secrets
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
+
+import httpx
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+
+from sso_template.auth.base import AuthError, AuthProvider, CallbackData, Identity
+from sso_template.auth.registry import build_providers
+from sso_template.auth.saml import SAMLProvider
+from sso_template.config import load_tenants
+from sso_template.session import Session, SessionManager
+from sso_template.settings import Settings
+from sso_template.store import InMemoryTTLStore, TTLStore
+from sso_template.users import InMemoryUserRepository, UserRepository
+
+log = logging.getLogger("sso_template")
+
+
+def safe_return_to(value: str | None) -> str:
+    """Allow only same-origin relative paths; anything else falls back to '/'."""
+    if not value or not value.startswith("/") or value.startswith("//"):
+        return "/"
+    if "\\" in value or any(ord(c) < 0x20 for c in value):
+        return "/"
+    parts = urlsplit(value)
+    if parts.scheme or parts.netloc:
+        return "/"
+    return value
+
+
+def create_app(
+    settings: Settings | None = None,
+    providers: dict[str, AuthProvider] | None = None,
+    store: TTLStore | None = None,
+    users: UserRepository | None = None,
+) -> FastAPI:
+    settings = settings or Settings()
+    store = store or InMemoryTTLStore()
+    users = users or InMemoryUserRepository()
+    sessions = SessionManager(store, settings)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        async with httpx.AsyncClient(timeout=settings.http_timeout_seconds) as http:
+            if providers is None:
+                tenants = load_tenants(settings.tenants_file)
+                app.state.providers = build_providers(tenants, settings, http, store)
+            else:
+                app.state.providers = providers
+            yield
+
+    app = FastAPI(title="sso-template", lifespan=lifespan)
+    app.state.settings = settings
+    app.state.sessions = sessions
+    app.state.users = users
+
+    # --- helpers ---------------------------------------------------------
+
+    def provider_for(request: Request, tenant: str) -> AuthProvider:
+        p = request.app.state.providers.get(tenant)
+        if p is None:
+            raise HTTPException(404, "unknown tenant")
+        return p
+
+    def set_pending(resp: Response, record: dict[str, Any]) -> None:
+        key = secrets.token_urlsafe(32)
+        store.set(f"pending:{key}", record, settings.pending_login_seconds)
+        # SAML responses arrive as a cross-site POST, which needs SameSite=None (+Secure).
+        # Plain-http dev falls back to Lax; it works because localhost ports are same-site.
+        samesite: Literal["none", "lax"] = "none" if settings.cookie_secure else "lax"
+        resp.set_cookie(
+            settings.pending_cookie,
+            key,
+            max_age=settings.pending_login_seconds,
+            path="/auth",
+            httponly=True,
+            secure=settings.cookie_secure,
+            samesite=samesite,
+        )
+
+    def take_pending(request: Request, tenant: str, kind: str) -> dict[str, Any]:
+        key = request.cookies.get(settings.pending_cookie)
+        record = store.pop(f"pending:{key}") if key else None
+        if not record or record["tenant"] != tenant or record["kind"] != kind:
+            raise AuthError(f"no matching pending {kind} for tenant {tenant!r}")
+        return record
+
+    def set_session_cookie(resp: Response, sid: str) -> None:
+        resp.set_cookie(
+            settings.session_cookie,
+            sid,
+            max_age=settings.session_absolute_seconds,
+            path="/",
+            httponly=True,
+            secure=settings.cookie_secure,
+            samesite="lax",
+        )
+
+    async def callback_data(request: Request) -> CallbackData:
+        form: dict[str, str] = {}
+        if request.method == "POST":
+            form = {k: v for k, v in (await request.form()).items() if isinstance(v, str)}
+        return CallbackData(request.url.path, dict(request.query_params), form)
+
+    def auth_failed(tenant: str, err: AuthError) -> HTMLResponse:
+        log.warning("auth failed tenant=%s reason=%s", tenant, err)
+        return HTMLResponse("<h1>로그인에 실패했습니다</h1><p><a href='/'>처음으로</a></p>", status_code=400)
+
+    async def finish(request: Request, tenant: str) -> Response:
+        provider = provider_for(request, tenant)
+        try:
+            pending = take_pending(request, tenant, "login")
+            raw = await provider.finish_login(await callback_data(request), pending["state"])
+            identity = provider.normalize(raw)
+        except AuthError as e:
+            return auth_failed(tenant, e)
+        users.upsert(identity)
+        # New session id on every login (session fixation).
+        sessions.destroy(request.cookies.get(settings.session_cookie))
+        sid = sessions.create(identity, raw.logout_hint)
+        log.info("login tenant=%s user=%s", tenant, identity.user_id)
+        resp = RedirectResponse(pending["return_to"], status_code=303)
+        resp.delete_cookie(settings.pending_cookie, path="/auth")
+        set_session_cookie(resp, sid)
+        return resp
+
+    # --- auth routes -----------------------------------------------------
+
+    @app.get("/auth/{tenant}/login")
+    async def login(request: Request, tenant: str, return_to: str | None = None) -> Response:
+        provider = provider_for(request, tenant)
+        target = safe_return_to(return_to)
+        redirect = await provider.start_login(target)
+        resp = RedirectResponse(redirect.url, status_code=302)
+        set_pending(resp, {"tenant": tenant, "kind": "login", "return_to": target, "state": redirect.state})
+        return resp
+
+    @app.get("/auth/{tenant}/callback")
+    async def oidc_callback(request: Request, tenant: str) -> Response:
+        return await finish(request, tenant)
+
+    @app.post("/auth/{tenant}/acs")
+    async def saml_acs(request: Request, tenant: str) -> Response:
+        return await finish(request, tenant)
+
+    @app.get("/auth/{tenant}/metadata")
+    async def saml_metadata(request: Request, tenant: str) -> Response:
+        provider = provider_for(request, tenant)
+        if not isinstance(provider, SAMLProvider):
+            raise HTTPException(404)
+        return Response(provider.sp_metadata(), media_type="application/samlmetadata+xml")
+
+    @app.get("/auth/{tenant}/sls")
+    async def saml_sls(request: Request, tenant: str) -> Response:
+        provider = provider_for(request, tenant)
+        try:
+            pending = take_pending(request, tenant, "logout")
+            await provider.finish_logout(await callback_data(request), pending["state"])
+        except AuthError as e:
+            # Local session is already gone; just report the IdP side failed.
+            log.warning("logout response rejected tenant=%s reason=%s", tenant, e)
+        resp = RedirectResponse("/", status_code=303)
+        resp.delete_cookie(settings.pending_cookie, path="/auth")
+        return resp
+
+    @app.post("/logout")
+    async def logout(request: Request) -> Response:
+        sess = sessions.destroy(request.cookies.get(settings.session_cookie))
+        resp: Response = RedirectResponse("/", status_code=303)
+        if sess is not None:
+            provider = request.app.state.providers.get(sess.identity.tenant)
+            redirect = await provider.start_logout(sess.logout_hint) if provider else None
+            if redirect is not None:
+                resp = RedirectResponse(redirect.url, status_code=303)
+                if redirect.state:
+                    set_pending(
+                        resp,
+                        {
+                            "tenant": sess.identity.tenant,
+                            "kind": "logout",
+                            "return_to": "/",
+                            "state": redirect.state,
+                        },
+                    )
+        resp.delete_cookie(settings.session_cookie, path="/")
+        return resp
+
+    # --- demo app routes -------------------------------------------------
+
+    @app.get("/", response_class=HTMLResponse)
+    async def home(request: Request, user: Annotated[Identity | None, Depends(current_user)]):
+        if user is None:
+            links = "".join(
+                f"<li><a href='/auth/{html.escape(t)}/login'>{html.escape(p.display_name)}</a>"
+                f" <small>({p.protocol})</small></li>"
+                for t, p in request.app.state.providers.items()
+            )
+            return f"<h1>sso-template</h1><p>로그인 방식을 선택하세요</p><ul>{links}</ul>"
+        return (
+            f"<h1>안녕하세요, {html.escape(user.name or user.subject)}</h1>"
+            f"<p>tenant: {html.escape(user.tenant)} / roles: "
+            f"{html.escape(', '.join(sorted(user.roles)))}</p>"
+            "<p><a href='/me'>/me</a> · <a href='/admin'>/admin</a></p>"
+            "<form method='post' action='/logout'><button>로그아웃</button></form>"
+        )
+
+    @app.get("/me")
+    async def me(user: Annotated[Identity, Depends(require_user)]) -> dict[str, Any]:
+        return {
+            "user_id": user.user_id,
+            "tenant": user.tenant,
+            "subject": user.subject,
+            "email": user.email,
+            "name": user.name,
+            "groups": list(user.groups),
+            "roles": sorted(user.roles),
+        }
+
+    @app.get("/admin")
+    async def admin(user: Annotated[Identity, Depends(require_role("admin"))]) -> dict[str, str]:
+        return {"message": f"admin area — hello {user.user_id}"}
+
+    @app.get("/healthz")
+    async def healthz() -> JSONResponse:
+        return JSONResponse({"status": "ok"})
+
+    return app
+
+
+# --- dependencies for application code -------------------------------------
+
+
+def current_session(request: Request) -> Session | None:
+    settings: Settings = request.app.state.settings
+    sessions: SessionManager = request.app.state.sessions
+    return sessions.load(request.cookies.get(settings.session_cookie))
+
+
+def current_user(
+    session: Annotated[Session | None, Depends(current_session)],
+) -> Identity | None:
+    return session.identity if session else None
+
+
+def require_user(user: Annotated[Identity | None, Depends(current_user)]) -> Identity:
+    if user is None:
+        raise HTTPException(401, "login required")
+    return user
+
+
+def require_role(*roles: str) -> Callable[[Identity], Identity]:
+    def dep(user: Annotated[Identity, Depends(require_user)]) -> Identity:
+        if not set(roles) <= user.roles:
+            raise HTTPException(403, "insufficient role")
+        return user
+
+    return dep

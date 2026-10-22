@@ -1,0 +1,111 @@
+{
+  "realm": "sso-dev",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "groups": [{ "name": "admins" }, { "name": "users" }],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Admin",
+      "credentials": [{ "type": "password", "value": "alice", "temporary": false }],
+      "groups": ["/admins", "/users"]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@example.com",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "bob", "temporary": false }],
+      "groups": ["/users"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "sso-template-oidc",
+      "name": "sso-template (OIDC)",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "__OIDC_CLIENT_SECRET__",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["__APP_BASE__/auth/kc-oidc/callback"],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "__APP_BASE__/"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "__APP_BASE__/auth/kc-saml/metadata",
+      "name": "sso-template (SAML)",
+      "protocol": "saml",
+      "enabled": true,
+      "frontchannelLogout": true,
+      "redirectUris": ["__APP_BASE__/auth/kc-saml/*"],
+      "attributes": {
+        "saml.server.signature": "true",
+        "saml.assertion.signature": "true",
+        "saml.client.signature": "true",
+        "saml.signing.certificate": "__SP_CERT__",
+        "saml.signature.algorithm": "RSA_SHA256",
+        "saml.encrypt": "false",
+        "saml.force.post.binding": "false",
+        "saml.authnstatement": "true",
+        "saml_force_name_id_format": "true",
+        "saml_name_id_format": "username",
+        "saml_assertion_consumer_url_post": "__APP_BASE__/auth/kc-saml/acs",
+        "saml_single_logout_service_url_redirect": "__APP_BASE__/auth/kc-saml/sls"
+      },
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "config": { "user.attribute": "email", "attribute.name": "email", "attribute.nameformat": "Basic" }
+        },
+        {
+          "name": "firstName",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "config": { "user.attribute": "firstName", "attribute.name": "firstName", "attribute.nameformat": "Basic" }
+        },
+        {
+          "name": "lastName",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "config": { "user.attribute": "lastName", "attribute.name": "lastName", "attribute.nameformat": "Basic" }
+        },
+        {
+          "name": "groups",
+          "protocol": "saml",
+          "protocolMapper": "saml-group-membership-mapper",
+          "config": { "attribute.name": "groups", "attribute.nameformat": "Basic", "full.path": "false", "single": "true" }
+        }
+      ]
+    }
+  ]
+}

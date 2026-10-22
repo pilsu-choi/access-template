@@ -1,0 +1,34 @@
+# Tenant id (URL segment) -> IdP settings. See wiki/adding-a-tenant.md.
+# ${VAR} / ${VAR:-default} are read from the environment (.env in dev).
+tenants:
+  kc-oidc:
+    protocol: oidc
+    display_name: Keycloak (OIDC)
+    issuer: ${KC_ISSUER:-http://localhost:8080/realms/sso-dev}
+    client_id: sso-template-oidc
+    client_secret: ${KC_OIDC_CLIENT_SECRET}
+    claims:
+      subject: sub
+      email: email
+      name: name
+      groups: groups
+    roles:
+      groups:
+        admins: [admin]
+      default: [user]
+
+  kc-saml:
+    protocol: saml
+    display_name: Keycloak (SAML)
+    idp_metadata_url: ${KC_ISSUER:-http://localhost:8080/realms/sso-dev}/protocol/saml/descriptor
+    sp_cert_file: .dev/sp/sp.crt
+    sp_key_file: .dev/sp/sp.key
+    claims:
+      subject: $nameid
+      email: email
+      name: [firstName, lastName]
+      groups: groups
+    roles:
+      groups:
+        admins: [admin]
+      default: [user]

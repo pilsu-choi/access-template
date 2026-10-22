@@ -1,0 +1,13 @@
+# Local mock IdP. Run `uv run python scripts/dev_setup.py` first to render the realm import.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.7
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./.dev/keycloak-import:/opt/keycloak/data/import:ro
