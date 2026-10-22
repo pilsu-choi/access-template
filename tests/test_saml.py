@@ -11,11 +11,11 @@ from cryptography.x509.oid import NameOID
 from onelogin.saml2.constants import OneLogin_Saml2_Constants as C
 from onelogin.saml2.utils import OneLogin_Saml2_Utils as U
 
-from sso_template.auth.base import AuthError, CallbackData
-from sso_template.auth.saml import SAMLProvider
-from sso_template.config import SAMLIdP, SAMLTenant
-from sso_template.settings import Settings
-from sso_template.store import InMemoryTTLStore
+from access_template.auth.base import AuthError, CallbackData
+from access_template.auth.saml import SAMLProvider
+from access_template.config import SAMLIdP, SAMLTenant
+from access_template.settings import Settings
+from access_template.store import InMemoryTTLStore
 
 BASE = "http://app.test"
 ACS = f"{BASE}/auth/t/acs"

@@ -17,11 +17,11 @@ from onelogin.saml2.constants import OneLogin_Saml2_Constants as C
 from onelogin.saml2.idp_metadata_parser import OneLogin_Saml2_IdPMetadataParser
 from onelogin.saml2.settings import OneLogin_Saml2_Settings
 
-from sso_template.auth.base import AuthError, CallbackData, Identity, RawIdentity, Redirect
-from sso_template.auth.claims import normalize
-from sso_template.config import SAMLTenant
-from sso_template.settings import Settings
-from sso_template.store import TTLStore
+from access_template.auth.base import AuthError, CallbackData, Identity, RawIdentity, Redirect
+from access_template.auth.claims import normalize
+from access_template.config import SAMLTenant
+from access_template.settings import Settings
+from access_template.store import TTLStore
 
 log = logging.getLogger(__name__)
 

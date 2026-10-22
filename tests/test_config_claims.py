@@ -1,10 +1,10 @@
 import pytest
 from pydantic import ValidationError
 
-from sso_template.app import safe_return_to
-from sso_template.auth.base import AuthError, RawIdentity
-from sso_template.auth.claims import normalize
-from sso_template.config import ClaimMapping, ConfigError, RoleMapping, parse_tenants
+from access_template.app import safe_return_to
+from access_template.auth.base import AuthError, RawIdentity
+from access_template.auth.claims import normalize
+from access_template.config import ClaimMapping, ConfigError, RoleMapping, parse_tenants
 
 OIDC = {"protocol": "oidc", "display_name": "x", "issuer": "https://idp", "client_id": "c"}
 

@@ -1,4 +1,4 @@
-# sso-template wiki
+# access-template wiki
 
 | 문서 | 내용 |
 |---|---|

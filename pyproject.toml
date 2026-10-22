@@ -1,7 +1,7 @@
 [project]
-name = "sso-template"
+name = "access-template"
 version = "0.1.0"
-description = "OIDC / SAML 2.0 SSO integration starter (FastAPI)"
+description = "SSO (OIDC / SAML 2.0) + RBAC access control starter (FastAPI)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

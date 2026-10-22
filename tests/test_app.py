@@ -3,11 +3,11 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from sso_template.app import create_app
-from sso_template.auth.base import AuthError, CallbackData, Identity, RawIdentity, Redirect
-from sso_template.auth.claims import normalize
-from sso_template.config import ClaimMapping, RoleMapping
-from sso_template.settings import Settings
+from access_template.app import create_app
+from access_template.auth.base import AuthError, CallbackData, Identity, RawIdentity, Redirect
+from access_template.auth.claims import normalize
+from access_template.config import ClaimMapping, RoleMapping
+from access_template.settings import Settings
 
 
 class FakeProvider:

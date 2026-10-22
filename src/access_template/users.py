@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Protocol
 
-from sso_template.auth.base import Identity
+from access_template.auth.base import Identity
 
 
 @dataclass

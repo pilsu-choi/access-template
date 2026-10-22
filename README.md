@@ -1,4 +1,4 @@
-# sso-template
+# access-template
 
 FastAPI 기반 **OIDC / SAML 2.0 SSO 연동 스타터**. 고객사 IdP(Keycloak, Entra ID, Okta, ADFS, Google 등)에
 SP/RP 로 붙는 코드를 설정 파일만으로 구성한다.
@@ -13,7 +13,7 @@ SP/RP 로 붙는 코드를 설정 파일만으로 구성한다.
 uv sync
 uv run python scripts/dev_setup.py   # .env, SP 인증서, Keycloak realm 생성
 docker compose up -d                 # Keycloak http://localhost:8080 (admin/admin)
-uv run uvicorn sso_template.main:app --reload --port 8000
+uv run uvicorn access_template.main:app --reload --port 8000
 ```
 
 http://localhost:8000 에서 `Keycloak (OIDC)` 또는 `Keycloak (SAML)` 선택 → `alice/alice` (admin) 또는 `bob/bob`.
@@ -23,8 +23,8 @@ http://localhost:8000 에서 `Keycloak (OIDC)` 또는 `Keycloak (SAML)` 선택 �
 ```python
 from typing import Annotated
 from fastapi import Depends
-from sso_template.app import require_role, require_user
-from sso_template.auth.base import Identity
+from access_template.app import require_role, require_user
+from access_template.auth.base import Identity
 
 
 @app.get("/reports")

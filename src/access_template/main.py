@@ -2,7 +2,7 @@ import logging
 
 from dotenv import load_dotenv
 
-from sso_template.app import create_app
+from access_template.app import create_app
 
 
 class RedactAuthQuery(logging.Filter):

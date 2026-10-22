@@ -1,4 +1,4 @@
-# PRD — SSO 연동 템플릿 (sso-template)
+# PRD — SSO 연동 템플릿 (access-template)
 
 - 상태: Draft v0.1
 - 작성일: 2026-10-22

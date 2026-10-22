@@ -14,16 +14,16 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from sso_template.auth.base import AuthError, AuthProvider, CallbackData, Identity
-from sso_template.auth.registry import build_providers
-from sso_template.auth.saml import SAMLProvider
-from sso_template.config import load_tenants
-from sso_template.session import Session, SessionManager
-from sso_template.settings import Settings
-from sso_template.store import InMemoryTTLStore, TTLStore
-from sso_template.users import InMemoryUserRepository, UserRepository
+from access_template.auth.base import AuthError, AuthProvider, CallbackData, Identity
+from access_template.auth.registry import build_providers
+from access_template.auth.saml import SAMLProvider
+from access_template.config import load_tenants
+from access_template.session import Session, SessionManager
+from access_template.settings import Settings
+from access_template.store import InMemoryTTLStore, TTLStore
+from access_template.users import InMemoryUserRepository, UserRepository
 
-log = logging.getLogger("sso_template")
+log = logging.getLogger("access_template")
 
 
 def safe_return_to(value: str | None) -> str:
@@ -59,7 +59,7 @@ def create_app(
                 app.state.providers = providers
             yield
 
-    app = FastAPI(title="sso-template", lifespan=lifespan)
+    app = FastAPI(title="access-template", lifespan=lifespan)
     app.state.settings = settings
     app.state.sessions = sessions
     app.state.users = users
@@ -205,7 +205,7 @@ def create_app(
                 f" <small>({p.protocol})</small></li>"
                 for t, p in request.app.state.providers.items()
             )
-            return f"<h1>sso-template</h1><p>로그인 방식을 선택하세요</p><ul>{links}</ul>"
+            return f"<h1>access-template</h1><p>로그인 방식을 선택하세요</p><ul>{links}</ul>"
         return (
             f"<h1>안녕하세요, {html.escape(user.name or user.subject)}</h1>"
             f"<p>tenant: {html.escape(user.tenant)} / roles: "

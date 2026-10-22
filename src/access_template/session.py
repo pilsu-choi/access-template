@@ -6,9 +6,9 @@ import secrets
 import time
 from dataclasses import dataclass, field, replace
 
-from sso_template.auth.base import Identity
-from sso_template.settings import Settings
-from sso_template.store import TTLStore
+from access_template.auth.base import Identity
+from access_template.settings import Settings
+from access_template.store import TTLStore
 
 
 @dataclass(frozen=True)

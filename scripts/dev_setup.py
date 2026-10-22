@@ -79,4 +79,4 @@ def render_realm(sp_cert_b64: str, env: dict[str, str | None]) -> None:
 if __name__ == "__main__":
     env = ensure_env()
     render_realm(ensure_sp_cert(), env)
-    print("done. next: docker compose up -d && uv run uvicorn sso_template.main:app --reload")
+    print("done. next: docker compose up -d && uv run uvicorn access_template.main:app --reload")

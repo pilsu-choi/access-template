@@ -21,10 +21,10 @@ from joserfc import jwt
 from joserfc.errors import JoseError
 from joserfc.jwk import KeySet
 
-from sso_template.auth.base import AuthError, CallbackData, Identity, RawIdentity, Redirect
-from sso_template.auth.claims import normalize
-from sso_template.config import OIDCTenant
-from sso_template.settings import Settings
+from access_template.auth.base import AuthError, CallbackData, Identity, RawIdentity, Redirect
+from access_template.auth.claims import normalize
+from access_template.config import OIDCTenant
+from access_template.settings import Settings
 
 log = logging.getLogger(__name__)
 

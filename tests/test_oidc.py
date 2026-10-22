@@ -6,10 +6,10 @@ import pytest
 from joserfc import jwt
 from joserfc.jwk import OctKey, RSAKey
 
-from sso_template.auth.base import AuthError, CallbackData
-from sso_template.auth.oidc import OIDCProvider
-from sso_template.config import OIDCTenant
-from sso_template.settings import Settings
+from access_template.auth.base import AuthError, CallbackData
+from access_template.auth.oidc import OIDCProvider
+from access_template.config import OIDCTenant
+from access_template.settings import Settings
 
 ISS = "https://idp.test/realms/r"
 CLIENT = "client-1"

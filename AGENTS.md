@@ -9,7 +9,7 @@ OIDC / SAML 2.0 SSO 연동 스타터 (FastAPI). 우리 서비스가 **SP / RP** 
 uv sync                                   # 의존성 설치 (Python 3.12, .python-version)
 uv run python scripts/dev_setup.py        # .env, SP 인증서(.dev/sp), Keycloak realm import 생성 (idempotent)
 docker compose up -d                      # 로컬 Keycloak :8080 (admin/admin), realm sso-dev
-uv run uvicorn sso_template.main:app --reload --port 8000
+uv run uvicorn access_template.main:app --reload --port 8000
 
 uv run pytest                             # 단위 테스트 (e2e 제외, IdP 불필요)
 uv run pytest -m e2e                      # 실제 브라우저 E2E. Keycloak + 앱이 떠 있어야 함
@@ -22,7 +22,7 @@ uv run ruff check . && uv run ruff format .
 ## 구조
 
 ```
-src/sso_template/
+src/access_template/
   app.py            # FastAPI 라우트, 쿠키, current_user / require_role 의존성
   main.py           # 엔트리포인트 + 접근 로그 redaction
   settings.py       # SSO_* 환경변수

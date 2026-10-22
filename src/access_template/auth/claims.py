@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from sso_template.auth.base import AuthError, Identity, RawIdentity
-from sso_template.config import ClaimMapping, RoleMapping
+from access_template.auth.base import AuthError, Identity, RawIdentity
+from access_template.config import ClaimMapping, RoleMapping
 
 
 def _first(value: Any) -> str | None:
