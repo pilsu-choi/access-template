@@ -1,0 +1,36 @@
+# Access policy. See wiki/concepts/rbac.md.
+# IdP groups -> roles live in tenants.yaml (roles.groups); roles -> permissions live here.
+
+permissions:
+  report:read: 보고서 조회
+  report:export: 보고서 내보내기
+  document:read: 문서 조회
+  document:edit: 문서 수정
+
+roles:
+  user:
+    description: 로그인한 모든 사용자 (tenants.yaml 의 기본 역할)
+    idp_scope: member_subtree   # 자기 조직과 하위 조직
+    permissions:
+      - document:read
+      - { permission: document:edit, when: owner }   # 본인 소유 문서만
+  manager:
+    description: 조직 관리자. 보통 앱에서 조직 범위를 붙여 부여
+    inherits: [user]
+    idp_scope: member_subtree
+    permissions: [report:read, document:edit]
+  admin:
+    description: 전사 관리자
+    idp_scope: global
+    permissions: ["*"]
+
+orgs:
+  hq: { name: 본사 }
+  sales: { name: 영업본부, parent: hq }
+  sales-1: { name: 영업1팀, parent: sales }
+  sales-2: { name: 영업2팀, parent: sales }
+  dev: { name: 개발본부, parent: hq }
+
+# Seed data (dev). user_id = "<tenant>:<subject>". Real projects keep these in a DB.
+members: {}
+grants: []

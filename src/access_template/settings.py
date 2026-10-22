@@ -27,3 +27,11 @@ class Settings(BaseSettings):
     @property
     def base(self) -> str:
         return self.base_url.rstrip("/")
+
+
+class RBACSettings(BaseSettings):
+    """Access-control settings. Read from `RBAC_*` env vars or `.env`."""
+
+    model_config = SettingsConfigDict(env_prefix="RBAC_", env_file=".env", extra="ignore")
+
+    policy_file: Path = Path("config/rbac.yaml")

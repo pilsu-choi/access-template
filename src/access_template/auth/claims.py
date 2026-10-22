@@ -48,6 +48,7 @@ def normalize(
         name = _first(attrs.get(claims.name))
 
     groups = tuple(_as_list(attrs.get(claims.groups))) if claims.groups else ()
+    orgs = tuple(_as_list(attrs.get(claims.org))) if claims.org else ()
 
     if allowed_email_domains:
         domain = email.rsplit("@", 1)[-1].lower() if email and "@" in email else None
@@ -65,4 +66,5 @@ def normalize(
         name=name,
         groups=groups,
         roles=frozenset(role_set),
+        orgs=orgs,
     )

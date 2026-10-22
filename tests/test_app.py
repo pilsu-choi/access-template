@@ -1,12 +1,16 @@
 """Web-layer wiring tests with a fake provider (no IdP needed)."""
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
-from access_template.app import create_app
+from access_template.app import check_role_names, create_app
 from access_template.auth.base import AuthError, CallbackData, Identity, RawIdentity, Redirect
 from access_template.auth.claims import normalize
-from access_template.config import ClaimMapping, RoleMapping
+from access_template.config import ClaimMapping, ConfigError, RoleMapping, parse_tenants
+from access_template.rbac.config import load_policy
+from access_template.rbac.policy import build_authorizer
 from access_template.settings import Settings
 
 
@@ -14,9 +18,10 @@ class FakeProvider:
     protocol = "fake"
     display_name = "Fake"
 
-    def __init__(self, tenant: str, groups: list[str]) -> None:
+    def __init__(self, tenant: str, groups: list[str], orgs: list[str] | None = None) -> None:
         self.tenant = tenant
         self.groups = groups
+        self.orgs = orgs
         self.logged_out = False
 
     async def start_login(self, return_to: str) -> Redirect:
@@ -25,7 +30,10 @@ class FakeProvider:
     async def finish_login(self, data: CallbackData, state: dict[str, str]) -> RawIdentity:
         if data.query.get("code") != state["expect"]:
             raise AuthError("bad code")
-        return RawIdentity({"sub": "u1", "groups": self.groups}, {"id_token": "t"})
+        attrs = {"sub": "u1", "groups": self.groups}
+        if self.orgs is not None:
+            attrs["department"] = self.orgs
+        return RawIdentity(attrs, {"id_token": "t"})
 
     async def start_logout(self, hint):
         return Redirect("https://idp.test/logout")
@@ -34,12 +42,21 @@ class FakeProvider:
         return None
 
     def normalize(self, raw: RawIdentity) -> Identity:
-        return normalize(self.tenant, raw, ClaimMapping(), RoleMapping(groups={"admins": ["admin"]}))
+        return normalize(
+            self.tenant, raw, ClaimMapping(org="department"), RoleMapping(groups={"admins": ["admin"]})
+        )
 
 
-def client(groups: list[str]) -> TestClient:
+POLICY = load_policy(Path("config/rbac.yaml"))
+
+
+def client(groups: list[str], orgs: list[str] | None = None) -> TestClient:
     settings = Settings(base_url="http://testserver", cookie_secure=False, _env_file=None)
-    app = create_app(settings, providers={"fake": FakeProvider("fake", groups)})
+    app = create_app(
+        settings,
+        providers={"fake": FakeProvider("fake", groups, orgs)},
+        authorizer=build_authorizer(POLICY),
+    )
     return TestClient(app, follow_redirects=False)
 
 
@@ -60,7 +77,9 @@ def test_login_flow_and_roles(admin):
     r = _login(admin)
     assert r.status_code == 303 and r.headers["location"] == "/me"
     assert "HttpOnly" in r.headers["set-cookie"]
-    assert admin.get("/me").json()["roles"] == ["admin", "user"]
+    me = admin.get("/me").json()
+    assert me["roles"] == ["admin", "user"]
+    assert me["orgs"] == [] and "*" in me["permissions"]
     assert admin.get("/admin").status_code == 200
 
 
@@ -116,3 +135,55 @@ def test_logout_destroys_session_and_redirects_to_idp(admin):
 
 def test_unknown_tenant(admin):
     assert admin.get("/auth/nope/login").status_code == 404
+
+
+# --- access control -------------------------------------------------------
+
+
+def test_permission_route(admin):
+    assert admin.get("/reports").status_code == 401
+    _login(admin)
+    assert admin.get("/reports").status_code == 200
+    with client(["users"], orgs=["sales"]) as c:
+        _login(c)
+        assert c.get("/reports").status_code == 403
+
+
+def test_org_claim_scopes_documents():
+    with client(["users"], orgs=["sales"]) as c:
+        _login(c)
+        assert c.get("/me").json()["orgs"] == ["sales"]
+        assert [d["id"] for d in c.get("/documents").json()] == ["d1", "d2"]
+        assert c.get("/documents/d1").status_code == 200
+        assert c.get("/documents/d3").status_code == 403
+        assert c.get("/documents/nope").status_code == 404
+
+
+def test_user_without_org_sees_nothing():
+    with client(["users"]) as c:
+        _login(c)
+        assert c.get("/documents").json() == []
+        assert c.get("/documents/d1").status_code == 403
+
+
+def test_admin_sees_all_documents(admin):
+    _login(admin)
+    assert [d["id"] for d in admin.get("/documents").json()] == ["d1", "d2", "d3"]
+
+
+def test_tenant_roles_must_exist_in_policy():
+    tenants = parse_tenants(
+        {
+            "tenants": {
+                "t": {
+                    "protocol": "oidc",
+                    "display_name": "T",
+                    "issuer": "https://idp.test",
+                    "client_id": "c",
+                    "roles": {"groups": {"admins": ["admin", "superuser"]}},
+                }
+            }
+        }
+    )
+    with pytest.raises(ConfigError, match="superuser"):
+        check_role_names(tenants, POLICY)

@@ -37,6 +37,8 @@ class ClaimMapping(_Strict):
     email: str | None = "email"
     name: str | list[str] | None = "name"
     groups: str | None = "groups"
+    # Org unit id(s), e.g. a department code. Overrides the RBAC org directory membership when present.
+    org: str | None = None
 
 
 class RoleMapping(_Strict):

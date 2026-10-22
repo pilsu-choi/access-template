@@ -95,3 +95,10 @@ def test_email_domain_restriction_allows_case_insensitive():
 )
 def test_safe_return_to(value, expected):
     assert safe_return_to(value) == expected
+
+
+def test_org_claim_mapping():
+    raw = RawIdentity({"sub": "u", "dept": ["sales-1", "dev"]})
+    ident = normalize("t", raw, ClaimMapping(org="dept"), RoleMapping())
+    assert ident.orgs == ("sales-1", "dev")
+    assert normalize("t", raw, ClaimMapping(), RoleMapping()).orgs == ()

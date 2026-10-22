@@ -1,0 +1,49 @@
+# Example access policy for a customer deployment. Copy to config/rbac.yaml and adjust.
+
+permissions:
+  loan:read: 여신 조회
+  loan:approve: 여신 승인
+  loan:export: 여신 데이터 내보내기
+  customer:read: 고객 정보 조회
+  customer:read-pii: 고객 개인정보(마스킹 해제) 조회
+  audit:read: 감사 로그 조회
+
+roles:
+  staff:
+    description: 일반 직원 — 자기 팀 데이터만
+    idp_scope: member
+    permissions: [loan:read, customer:read]
+  team-lead:
+    description: 팀장 — 자기 팀 승인
+    inherits: [staff]
+    idp_scope: member
+    permissions: [loan:approve]
+  division-head:
+    description: 본부장 — 본부 전체 조회 (하위 조직 포함)
+    inherits: [team-lead]
+    idp_scope: member_subtree
+    permissions: [loan:export]
+  auditor:
+    description: 감사 — 전사 조회만
+    idp_scope: global
+    permissions: [loan:read, customer:read, audit:read]
+  admin:
+    idp_scope: global
+    permissions: ["*"]
+
+orgs:
+  hq: { name: 본점 }
+  retail: { name: 개인금융본부, parent: hq }
+  retail-seoul: { name: 서울영업팀, parent: retail }
+  retail-busan: { name: 부산영업팀, parent: retail }
+  corporate: { name: 기업금융본부, parent: hq }
+
+# Users whose org isn't in an IdP claim (org claim, when mapped and present, takes precedence).
+members:
+  "customer-saml:kim@bank.example": [retail-seoul]
+
+grants:
+  # Acting team lead for 부산영업팀 only, without sub-orgs.
+  - { user: "customer-saml:kim@bank.example", role: team-lead, org: retail-busan, subtree: false }
+  # One-off exception: PII access for one team, recorded as a direct grant.
+  - { user: "customer-saml:lee@bank.example", permission: customer:read-pii, org: retail-seoul }

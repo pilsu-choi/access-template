@@ -7,6 +7,7 @@ import logging
 import secrets
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
@@ -17,9 +18,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from access_template.auth.base import AuthError, AuthProvider, CallbackData, Identity
 from access_template.auth.registry import build_providers
 from access_template.auth.saml import SAMLProvider
-from access_template.config import load_tenants
+from access_template.config import ConfigError, TenantsFile, load_tenants
+from access_template.rbac.base import Authorizer, Resource, Visibility
+from access_template.rbac.config import RBACPolicy, load_policy
+from access_template.rbac.policy import build_authorizer
 from access_template.session import Session, SessionManager
-from access_template.settings import Settings
+from access_template.settings import RBACSettings, Settings
 from access_template.store import InMemoryTTLStore, TTLStore
 from access_template.users import InMemoryUserRepository, UserRepository
 
@@ -38,13 +42,33 @@ def safe_return_to(value: str | None) -> str:
     return value
 
 
+def check_role_names(tenants: TenantsFile, policy: RBACPolicy) -> None:
+    """Every role a tenant maps IdP groups to must be defined in the access policy."""
+    for tid, t in tenants.tenants.items():
+        used = set(t.roles.default) | {r for rs in t.roles.groups.values() for r in rs}
+        unknown = used - set(policy.roles)
+        if unknown:
+            raise ConfigError(f"tenant {tid!r} maps to roles not in the access policy: {sorted(unknown)}")
+
+
+# Demo data for /documents. A real app loads these from its DB and builds a `Resource` per row.
+DEMO_DOCUMENTS = (
+    Resource("document", "d1", org="sales-1", attrs={"title": "영업1팀 주간 보고"}),
+    Resource("document", "d2", org="sales-2", attrs={"title": "영업2팀 실적"}),
+    Resource("document", "d3", org="dev", attrs={"title": "개발본부 로드맵"}),
+)
+
+
 def create_app(
     settings: Settings | None = None,
     providers: dict[str, AuthProvider] | None = None,
     store: TTLStore | None = None,
     users: UserRepository | None = None,
+    authorizer: Authorizer | None = None,
+    rbac_settings: RBACSettings | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
+    rbac_settings = rbac_settings or RBACSettings()
     store = store or InMemoryTTLStore()
     users = users or InMemoryUserRepository()
     sessions = SessionManager(store, settings)
@@ -52,11 +76,15 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with httpx.AsyncClient(timeout=settings.http_timeout_seconds) as http:
+            policy = load_policy(rbac_settings.policy_file) if authorizer is None else None
             if providers is None:
                 tenants = load_tenants(settings.tenants_file)
+                if policy is not None:
+                    check_role_names(tenants, policy)
                 app.state.providers = build_providers(tenants, settings, http, store)
             else:
                 app.state.providers = providers
+            app.state.authorizer = authorizer if policy is None else build_authorizer(policy)
             yield
 
     app = FastAPI(title="access-template", lifespan=lifespan)
@@ -215,7 +243,8 @@ def create_app(
         )
 
     @app.get("/me")
-    async def me(user: Annotated[Identity, Depends(require_user)]) -> dict[str, Any]:
+    async def me(access: Annotated[Access, Depends(get_access)]) -> dict[str, Any]:
+        user = access.user
         return {
             "user_id": user.user_id,
             "tenant": user.tenant,
@@ -224,11 +253,37 @@ def create_app(
             "name": user.name,
             "groups": list(user.groups),
             "roles": sorted(user.roles),
+            "orgs": list(user.orgs),
+            "permissions": sorted(access.authorizer.permissions(user)),
         }
 
     @app.get("/admin")
     async def admin(user: Annotated[Identity, Depends(require_role("admin"))]) -> dict[str, str]:
         return {"message": f"admin area — hello {user.user_id}"}
+
+    @app.get("/reports")
+    async def reports(
+        user: Annotated[Identity, Depends(require_permission("report:read"))],
+    ) -> dict[str, str]:
+        return {"message": f"reports for {user.user_id}"}
+
+    @app.get("/documents")
+    async def documents(access: Annotated[Access, Depends(get_access)]) -> list[dict[str, Any]]:
+        # List filtering: turn the visible orgs into a query filter (`WHERE org IN (...)` in SQL).
+        # Rows reachable only through a condition (e.g. `owner`) need a per-row `access.can()`.
+        vis = access.visible("document:read")
+        rows = [d for d in DEMO_DOCUMENTS if vis.covers(d.org)]
+        if vis.conditional:
+            rows += [d for d in DEMO_DOCUMENTS if d not in rows and access.can("document:read", d)]
+        return [{"id": d.id, "org": d.org, **d.attrs} for d in rows]
+
+    @app.get("/documents/{doc_id}")
+    async def document(doc_id: str, access: Annotated[Access, Depends(get_access)]) -> dict[str, Any]:
+        doc = next((d for d in DEMO_DOCUMENTS if d.id == doc_id), None)
+        if doc is None:
+            raise HTTPException(404)
+        access.require("document:read", doc)
+        return {"id": doc.id, "org": doc.org, **doc.attrs}
 
     @app.get("/healthz")
     async def healthz() -> JSONResponse:
@@ -263,5 +318,39 @@ def require_role(*roles: str) -> Callable[[Identity], Identity]:
         if not set(roles) <= user.roles:
             raise HTTPException(403, "insufficient role")
         return user
+
+    return dep
+
+
+@dataclass(frozen=True)
+class Access:
+    """The current user bound to the authorizer, for resource-level checks inside handlers."""
+
+    user: Identity
+    authorizer: Authorizer
+
+    def can(self, permission: str, resource: Resource | None = None) -> bool:
+        return self.authorizer.check(self.user, permission, resource).allowed
+
+    def require(self, permission: str, resource: Resource | None = None) -> None:
+        if not self.can(permission, resource):
+            raise HTTPException(403, "permission denied")
+
+    def visible(self, permission: str) -> Visibility:
+        return self.authorizer.visible(self.user, permission)
+
+
+def get_access(request: Request, user: Annotated[Identity, Depends(require_user)]) -> Access:
+    return Access(user, request.app.state.authorizer)
+
+
+def require_permission(*permissions: str) -> Callable[[Access], Identity]:
+    """Route-level check: the user holds every permission somewhere. Conditional permissions
+    (e.g. `when: owner`) never pass here — check those with `Access.require(perm, resource)`."""
+
+    def dep(access: Annotated[Access, Depends(get_access)]) -> Identity:
+        for p in permissions:
+            access.require(p)
+        return access.user
 
     return dep

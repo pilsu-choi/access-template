@@ -1,4 +1,4 @@
-# PRD — SSO 연동 템플릿 (access-template)
+# PRD — SSO 연동 + 접근 제어 템플릿 (access-template)
 
 - 상태: Draft v0.1
 - 작성일: 2026-10-22
@@ -98,9 +98,39 @@
 - [x] 단위 테스트 통과: 클레임 매핑, 설정 검증, return_to 검증, OIDC ID Token 거부 케이스(서명·aud·iss·nonce·만료), SAML Response 거부 케이스(서명 없음/변조·audience·만료)
 - [x] wiki: onboarding-checklist, Keycloak 가이드, 트러블슈팅 작성
 
-## 9. 오픈 이슈
+## 9. 접근 제어 (RBAC + 조직 범위) — v1.1
+
+여러 고객사에 납품할 보일러플레이트이므로 **라이브러리(앱 프로세스 내 판정)** 로 구현한다.
+고객사 간 판정 서버 공유는 망 분리로 불가능하고, 고객사마다 서버를 따로 설치하면 운영 부담만 늘어나기 때문이다.
+여러 서비스가 한 정책을 공유해야 하는 고객사는 `Authorizer` 어댑터로 외부 PDP(EAM, OpenFGA, Cerbos 등)를 붙인다.
+코드는 `rbac/` 에 두되 `auth/` 를 import 하지 않는다. 연결 지점은 `Identity`(user_id, roles, orgs) 하나뿐이다.
+
+| ID | 요구사항 |
+|---|---|
+| R-1 | 권한 `resource:action`, 와일드카드 `resource:*` / `*`. 권한 카탈로그로 오타 검출 |
+| R-2 | 역할 → 권한, 역할 상속(`inherits`), 순환 금지 |
+| R-3 | 조직 트리(`parent`), 사용자 소속(복수). 소속 출처: IdP 클레임(`claims.org`)이 있으면 우선, 없으면 `OrgDirectory` |
+| R-4 | IdP 역할의 적용 범위 `idp_scope`: `global` / `member` / `member_subtree` |
+| R-5 | 앱 Grant: 사용자에게 역할 또는 단일 권한을 조직 범위(하위 포함 여부)와 함께 부여. 재로그인 없이 반영 |
+| R-6 | 리소스 조건(`when`): 기본 `owner`, 코드에서 추가 등록. 미등록 조건 참조는 시작 시 오류 |
+| R-7 | 기본 거부. 라우트 수준 검사는 조건부 권한으로 통과하지 않음. 조직 범위 Grant 는 조직 없는 리소스에 닿지 않음 |
+| R-8 | 목록 필터용 `visible(user, permission)` → 전사 / 조직 id 집합 / 조건부 존재 여부 |
+| R-9 | 모든 판정을 `AuditSink` 로 기록 (user_id, permission, resource, 허용 여부, 사유). PII·토큰 제외 |
+| R-10 | 시작 시 검증: rbac.yaml 스키마·참조·순환, tenants.yaml 이 매핑하는 역할이 rbac.yaml 에 존재 |
+| R-11 | 앱 의존성: `require_permission(...)`, `Access.can/require/visible` |
+
+비목표(v1.1): 명시적 deny 규칙, 테넌트별 정책 오버라이드, 권한 관리 UI, SQL 저장소 구현, 외부 PDP 어댑터 구현(인터페이스만).
+
+완료 기준:
+- [x] 단위 테스트: 정책 거부 케이스(순환·미정의 참조·형식·카탈로그), 와일드카드, 상속, idp_scope, Grant 범위(subtree on/off), 직접 권한, owner 조건, 조직 클레임 우선, visible, 감사 이벤트 PII 미포함
+- [x] 로컬 Keycloak E2E: alice(admin) `/reports` 200, bob(user, 조직 없음) `/reports` 403, `/documents` 빈 목록
+- [x] wiki `concepts/rbac.md`, 온보딩 체크리스트에 조직·감사 항목 추가
+
+## 10. 오픈 이슈
 
 - 운영 배포 형태(컨테이너 이미지 표준)는 프로젝트별로 결정
 - 운영 https 환경의 SAML pending 쿠키(`SameSite=None; Secure`) 경로는 아직 미검증 — 로컬은 http + `Lax` 로만 E2E 확인
 - Google / Entra / Okta / ADFS 실연동 미검증 (wiki 는 초안)
 - 고객사별 국내 SSO 솔루션 목록 수집 필요 → v2 adapter 우선순위 결정
+- 로컬 Keycloak 에 조직(부서) 속성이 없어 조직 클레임 경로는 단위 테스트로만 검증됨
+- 고객사 EAM / 인사 시스템 연동 사례 수집 → `OrgDirectory` / `Authorizer` 어댑터 우선순위 결정

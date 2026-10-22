@@ -8,6 +8,7 @@
 | [concepts/oidc.md](concepts/oidc.md) | OIDC Authorization Code + PKCE 흐름, 이 템플릿의 검증 항목 |
 | [concepts/saml.md](concepts/saml.md) | SAML SP-initiated SSO / SLO 흐름, 검증 항목 |
 | [concepts/sessions.md](concepts/sessions.md) | pending store, 서버 세션, 쿠키 정책 |
+| [concepts/rbac.md](concepts/rbac.md) | 사용자·조직·역할 접근 제어: 정책 파일, 판정 규칙, 목록 필터, 감사 로그 |
 | [providers/keycloak.md](providers/keycloak.md) | 로컬 개발용 Keycloak (검증 완료) |
 | [providers/google.md](providers/google.md) | Google (OIDC) |
 | [providers/entra-id.md](providers/entra-id.md) | Microsoft Entra ID — 초안 |

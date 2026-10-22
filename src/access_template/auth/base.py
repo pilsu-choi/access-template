@@ -23,6 +23,8 @@ class Identity:
     name: str | None
     groups: tuple[str, ...]
     roles: frozenset[str]
+    # Org unit ids asserted by the IdP (e.g. department code). Empty when not mapped.
+    orgs: tuple[str, ...] = ()
 
     @property
     def user_id(self) -> str:

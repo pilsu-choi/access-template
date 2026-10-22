@@ -14,7 +14,8 @@
 | `display_name` | 로그인 화면 표시명 |
 | `claims.subject` | 사용자 고유 식별자로 쓸 클레임/속성. SAML 은 `$nameid` 로 NameID 지정 |
 | `claims.email` / `claims.name` / `claims.groups` | 매핑할 클레임 이름. `name` 은 리스트면 공백으로 이어붙임. 없으면 `null` |
-| `roles.groups` | 그룹 값 → 역할 리스트 |
+| `claims.org` | 소속 조직 id(부서 코드 등) 클레임. 값이 있으면 rbac `OrgDirectory` 소속보다 우선. 기본 `null` |
+| `roles.groups` | 그룹 값 → 역할 리스트. 역할은 `config/rbac.yaml` 에 정의돼 있어야 함 (없으면 시작 시 오류) |
 | `roles.default` | 모든 사용자에게 주는 역할 (기본 `[user]`) |
 | `allowed_email_domains` | 비어있지 않으면 이 도메인 이메일만 로그인 허용 |
 

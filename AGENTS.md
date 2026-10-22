@@ -1,7 +1,7 @@
 # AGENTS.md
 
-OIDC / SAML 2.0 SSO 연동 스타터 (FastAPI). 우리 서비스가 **SP / RP** 로서 고객사 IdP 에 붙는다.
-요구사항은 `PRD.md`, 개념·IdP 별 가이드는 `wiki/` 를 본다.
+SSO 연동 + 접근 제어 스타터 (FastAPI). 우리 서비스가 **SP / RP** 로서 고객사 IdP 에 붙고(`auth/`),
+사용자·조직·역할 기반으로 권한을 판정한다(`rbac/`). 요구사항은 `PRD.md`, 개념·IdP 별 가이드는 `wiki/` 를 본다.
 
 ## 명령어
 
@@ -23,9 +23,9 @@ uv run ruff check . && uv run ruff format .
 
 ```
 src/access_template/
-  app.py            # FastAPI 라우트, 쿠키, current_user / require_role 의존성
+  app.py            # FastAPI 라우트, 쿠키, current_user / require_role / require_permission / Access 의존성
   main.py           # 엔트리포인트 + 접근 로그 redaction
-  settings.py       # SSO_* 환경변수
+  settings.py       # SSO_* / RBAC_* 환경변수
   config.py         # tenants.yaml 스키마 (pydantic, extra=forbid), ${ENV} 치환
   session.py        # 서버 사이드 세션 (쿠키에는 불투명 id 만)
   store.py          # TTLStore 인터페이스 + InMemory 구현 (pending / session / replay)
@@ -36,14 +36,22 @@ src/access_template/
     oidc.py         # OIDCProvider (httpx + joserfc)
     saml.py         # SAMLProvider (python3-saml)
     registry.py     # protocol → provider 생성
+  rbac/             # 접근 제어. auth/ 를 import 하지 않는다
+    base.py         # Principal, Resource, Scope, Grant, Decision, Visibility, Authorizer 등 프로토콜
+    config.py       # rbac.yaml 스키마 + 검증 (순환, 미정의 참조, 권한 카탈로그)
+    policy.py       # PolicyAuthorizer (역할/Grant/조직 범위/조건 판정), LoggingAuditSink
+    stores.py       # InMemoryOrgDirectory, InMemoryGrantRepository
 config/tenants.yaml           # 로컬 Keycloak 테넌트 2개 (kc-oidc, kc-saml)
 config/tenants.example.yaml   # Google / Entra / 일반 SAML 예시
+config/rbac.yaml              # 권한 카탈로그, 역할, 조직 트리 (데모)
+config/rbac.example.yaml      # 고객사(금융권) 정책 예시
 dev/keycloak/                 # realm import 템플릿 (실제 import 파일은 .dev/ 에 렌더링)
 tests/                        # 단위 테스트, tests/e2e/ 는 Playwright
 wiki/                         # 개념, IdP 별 가이드, 온보딩 체크리스트, 트러블슈팅
 ```
 
-라우트: `/auth/{tenant}/login|callback|acs|metadata|sls`, `POST /logout`, `/me`, `/admin`, `/healthz`.
+라우트: `/auth/{tenant}/login|callback|acs|metadata|sls`, `POST /logout`, `/me`, `/admin`, `/healthz`,
+데모 `/reports`(권한), `/documents`, `/documents/{id}`(조직 범위).
 
 ## 핵심 설계 규칙
 
@@ -53,7 +61,20 @@ wiki/                         # 개념, IdP 별 가이드, 온보딩 체크리�
   `sso_pending` 쿠키로 브라우저와 바인딩한다. 1회용(pop).
 - 세션은 서버 사이드. 로그인마다 새 session id 발급(fixation 방지).
 - `return_to` 는 반드시 `safe_return_to()` 를 거친다.
-- 고객사별 차이는 가능한 한 **설정(tenants.yaml)** 으로 흡수하고, 코드 분기는 최후 수단.
+- 고객사별 차이는 가능한 한 **설정(tenants.yaml / rbac.yaml)** 으로 흡수하고, 코드 분기는 최후 수단.
+
+### 접근 제어 (`rbac/`)
+
+- `rbac/` 는 `auth/` 를 import 하지 않는다. `Principal`(user_id, roles, orgs) 프로토콜만 받는다. 연결은 `app.py` 에서.
+- IdP 그룹 → 역할은 `tenants.yaml`, 역할 → 권한·조직 트리는 `rbac.yaml`. 앱 코드에서 IdP 그룹 이름으로 분기하지 않는다.
+- 앱 코드는 역할이 아니라 **권한**으로 검사한다 (`require_permission("report:read")`, `access.require(perm, resource)`).
+  `require_role` 은 기존 호환용.
+- 기본 거부. 판정을 완화하는 우회 경로(예: 특정 역할 하드코딩 허용)를 만들지 않는다.
+- 리소스 단위 검사는 `Resource(type, id, org, owner)` 로. 목록은 `access.visible()` 로 쿼리 필터를 만들고,
+  `visible.conditional` 이면 조건부 행은 `access.can()` 으로 행 단위 확인.
+- 새 조건은 코드에서 `conditions={"name": fn}` 으로 등록하고 `rbac.yaml` 에서 `when: name` 으로 참조.
+- 감사 이벤트(`AuditEvent`)에는 `user_id` 만. 이메일·이름·토큰 금지.
+- `InMemoryOrgDirectory` / `InMemoryGrantRepository` 는 개발·소규모용. 운영 저장소·인사 시스템·외부 PDP 는 같은 프로토콜로 구현해 교체.
 
 ## 새 IdP / 테넌트 추가
 
@@ -71,9 +92,10 @@ wiki/                         # 개념, IdP 별 가이드, 온보딩 체크리�
 - 토큰, authorization code, SAMLResponse/Assertion, client secret, 개인키를 **로그·예외 메시지·응답에 넣지 않는다.**
   `AuthError` 메시지는 서버 로그로만 가고 사용자에게는 일반 오류만 보인다.
 - 비밀값·SP 개인키를 커밋하지 않는다 (`.env`, `.dev/` 는 gitignore). 설정에는 `${ENV}` 참조만.
-- `InMemoryTTLStore` / `InMemoryUserRepository` 는 단일 프로세스 개발용. 멀티 워커 운영에서는 교체해야 한다.
+- `InMemoryTTLStore` / `InMemoryUserRepository` / `InMemoryGrantRepository` 는 단일 프로세스 개발용. 멀티 워커 운영에서는 교체해야 한다.
 
 ## 완료 판단
 
 - `uv run pytest` 와 `uv run ruff check .` 통과
 - 인증 흐름을 바꿨다면 `uv run pytest -m e2e` 로 OIDC·SAML 로그인/로그아웃을 실제 브라우저에서 확인
+- 판정 규칙을 바꿨다면 거부 케이스 위주로 `tests/test_rbac.py` 에 테스트 추가, `wiki/concepts/rbac.md` 갱신
