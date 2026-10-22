@@ -1,6 +1,7 @@
 """Access policy validation and authorization decisions (no web layer)."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -110,12 +111,22 @@ def test_unregistered_condition_rejected():
     authz(raw, conditions={"same_branch": lambda p, r: True})  # registered: fine
 
 
-@pytest.mark.parametrize("path", ["config/rbac.yaml", "config/rbac.example.yaml"])
-def test_shipped_policies_load(path):
-    from pathlib import Path
+@pytest.mark.parametrize("policy_path", ["config/rbac.yaml", "config/rbac.example.yaml"])
+@pytest.mark.parametrize("tenants_path", ["config/tenants.yaml", "config/tenants.example.yaml"])
+def test_shipped_configs_fit_together(policy_path, tenants_path):
+    import os
+    import re
 
-    pol = load_policy(Path(path))
+    import yaml
+
+    from access_template.app import check_role_names
+    from access_template.config import parse_tenants
+
+    pol = load_policy(Path(policy_path))
     PolicyAuthorizer(pol, InMemoryOrgDirectory.from_policy(pol), InMemoryGrantRepository.from_policy(pol))
+    text = Path(tenants_path).read_text(encoding="utf-8")
+    env = {**os.environ, **{v: "x" for v in re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)", text)}}
+    check_role_names(parse_tenants(yaml.safe_load(text), env=env), pol)
 
 
 # --- matching ---------------------------------------------------------------

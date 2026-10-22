@@ -1,4 +1,5 @@
 # Example access policy for a customer deployment. Copy to config/rbac.yaml and adjust.
+# Every role tenants.yaml maps to (including roles.default, `user` unless overridden) must exist here.
 
 permissions:
   loan:read: 여신 조회
@@ -9,6 +10,9 @@ permissions:
   audit:read: 감사 로그 조회
 
 roles:
+  user:
+    description: 로그인한 모든 사용자 (tenants.yaml 기본 역할). 권한 없음 — 업무 권한은 아래 역할로
+    idp_scope: member
   staff:
     description: 일반 직원 — 자기 팀 데이터만
     idp_scope: member

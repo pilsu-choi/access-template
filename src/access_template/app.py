@@ -79,8 +79,10 @@ def create_app(
             policy = load_policy(rbac_settings.policy_file) if authorizer is None else None
             if providers is None:
                 tenants = load_tenants(settings.tenants_file)
-                if policy is not None:
-                    check_role_names(tenants, policy)
+                # A custom authorizer built from a policy (e.g. with extra conditions) is checked too.
+                known = policy or getattr(authorizer, "policy", None)
+                if isinstance(known, RBACPolicy):
+                    check_role_names(tenants, known)
                 app.state.providers = build_providers(tenants, settings, http, store)
             else:
                 app.state.providers = providers

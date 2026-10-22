@@ -17,6 +17,9 @@ IdP 조직 클레임 / OrgDirectory ──────────▶ 사용자 
 | 역할 | 권한 묶음. `inherits` 로 상속 | `rbac.yaml` `roles` |
 | 조직 | 트리 (`parent`). 상위 조직 범위는 하위 조직을 포함할 수 있다 | `rbac.yaml` `orgs` 또는 `OrgDirectory` 구현 |
 | 소속 | 사용자 → 조직 (복수 가능, 겸직) | IdP 클레임(`claims.org`) 우선, 없으면 `OrgDirectory.memberships` |
+
+> IdP 조직 클레임 값은 `rbac.yaml` 의 조직 id 와 **정확히 일치**해야 한다. 부서 표시명(`영업1팀`)이나 대문자 코드(`SALES-1`)가
+> 오면 아무 권한도 생기지 않는다(기본 거부). 온보딩 때 클레임 값 형식을 확인하고 조직 id 를 그 값으로 정한다.
 | Grant | 앱이 사용자에게 부여한 역할 또는 단일 권한 + 범위(`Scope(org, subtree)`) | `GrantRepository` (seed: `rbac.yaml` `grants`) |
 | 조건 | `when: owner` 처럼 리소스를 봐야 하는 규칙. 코드에서 등록 | `PolicyAuthorizer(conditions=...)` |
 | 리소스 | `Resource(type, id, org, owner, attrs)` | 앱 코드가 DB 행에서 생성 |
@@ -75,7 +78,9 @@ def same_branch(p: Principal, r: Resource) -> bool:
     return r.attrs.get("branch") in p.orgs
 
 
-authorizer = build_authorizer(policy, conditions={"same_branch": same_branch})
+# main.py
+policy = load_policy(RBACSettings().policy_file)
+app = create_app(authorizer=build_authorizer(policy, conditions={"same_branch": same_branch}))
 # rbac.yaml: - { permission: loan:approve, when: same_branch }
 ```
 
